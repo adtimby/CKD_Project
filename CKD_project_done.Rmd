@@ -1,0 +1,553 @@
+---
+title: "Chronic Kidney Disease Project"
+author: "Avie Timby"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  word_document: default
+header-includes:
+- \usepackage{amsfonts}
+- \usepackage{fontawesome}
+- \usepackage{amsmath}
+- \usepackage{amssymb}
+subtitle: "DASC 3213 - Statistical Learning"
+geometry: margin=1in
+fontsize: 11pt
+endnote: no
+---
+
+```{r setup, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ISLR2)
+library(tidyverse)
+library(MASS)
+library(e1071)
+library(class)
+library(dplyr)
+library(tinytex)
+library(leaps)
+library(randomForest)
+```
+
+
+## Analysis of Previous Work 
+
+For this part of the project you will need to read the paper *Risk Factor Prediction of Chronic Kidney Disease based on Machine Learning Algorithms* by Islam et al (2020) and answer the following questions which are intended to help you understand and critique the paper. 
+
+Provide a short summary of the paper. Make sure to address the following questions in your response. 
+ - What is the statistical research question the paper tries to address? 
+ - Is this a supervised or unsupervised learning problem? 
+ - What models are used to investigate the research question? Which model was reported to have the best performance? 
+ - Are all of these models appropriate in the context of the problem? If not, which models have been used incorrectly? 
+ - How was model selection performed in the paper? What about model validation?
+ - Did you find the paper to be reproducible in its current state? 
+ 
+ 
+## Paper Summary
+  The research hopes to predict the risk factors most associated with CKD (Chronic Kidney Disease) using 6 different statistical algorithms to find the 'best' classification outcomes in order to predict who may be at risk of CKD. This problem is a supervised learning problem as the main goal is classification of data inputs
+The paper uses the models/algorithms: Naive Bayes, Random Forest, Simple Logistic Regression, Decision Stump, Linear Regression, and Simple Linear Regression to analyze the data and investigate the research question. Random forest was reported to have the best performance of the models, with 98.8858% accuracy.These models are used mostly appropriately for their tasks, although decision stump on its own is not the best predictor of significant features. There wasn't much model selection or validation performed in this paper, Bayes, Random Forest and simple logistic regression were just used to evaluate the accuracy of the other models predictions, and the one with the best accuracy was selected. The paper is somewhat reproducible in its current state, as we know which models and algorithms were used as well as the metric used for discerning a models validity, however we do not know exactly what was done to the data. We only know that the data was smoothed for missing values. 
+
+## Reviewing and Cleaning Data 
+
+The next step of the project it to investigate the data to check if it needs to be modified or cleaned prior to fitting the models. 
+
+In order to better understand the data answer the following questions. You will need to view the data in R to answer some of the questions. 
+
+- What are the dimensions of the data set? How many covariates were measured on each experimental unit? 
+- Are there any missing values in the data set? How did Islam et al. (2020) report to handle any missing data? 
+- What types of covariates (Continuous, Discrete, Ordinal, Nominal) are reported to be in the data by Islam et al. (2020)? 
+- Review the list of covariates and their data types on the UC Irvine ML repository (https://archive.ics.uci.edu/dataset/857/risk+factor+prediction+of+chronic+kidney+disease)
+- What are the types of covariates listed in the actual data set in R when you first load it? Does this properly align with the data types reported in Isalm et al. (2020) and on the UC Irvine ML repository? 
+- Reformat the data in R so that it is appropriate for further analysis. 
+
+```{r}
+ckd_dataset_v2 <- read_csv(
+  "C:/Users/aviet/Documents/DASC3213/data/ckd-dataset-v2.csv", 
+  show_col_types = FALSE)
+```
+
+```{r}
+dim(ckd_dataset_v2)
+
+print("Count of total missing values  ")
+sum(is.na(ckd_dataset_v2))
+
+print("Count of total missing values by column  ")
+colSums(is.na(ckd_dataset_v2))
+
+print("Count of total missing values by row  ")
+rowSums(is.na(ckd_dataset_v2))
+
+```
+The dimensions of the dataframe is 202x29, with 29 covariates. There are 27 missing pieces of data, and all 27 come from the same row or experimental unit. Islam et al. (2020) handled the missing data by filling replacing it with the mean value from the column. The covariates were originally reported to be nominal and converted via encoding. One of the covariates was originally categorical. 
+
+When the data is first loaded into R, the only data type available is discrete which doesn't match with either the Islam report or the UC Irving report. 
+
+```{r}
+# Remove row with missing data, its almost the entire row so it doesnt really contribute
+ckd_dataset <- ckd_dataset_v2[-c(1:2),]
+ckd_dataset <- ckd_dataset[-c(180),]
+ckd_dataset
+
+#Change names to make it easier to call/work with
+names(ckd_dataset)[names(ckd_dataset) == "bp (Diastolic)"] <- "bp_diastolic"
+names(ckd_dataset)[names(ckd_dataset) == "bp limit"] <- "bp_limit"
+
+
+print(names(ckd_dataset))
+```
+
+
+
+```{r}
+ckd_dataset$sg[ckd_dataset$sg == "< 1.007"] <- "0 - 1.011"
+ckd_dataset$sg[ckd_dataset$sg == "1.009 - 1.011"] <- "0 - 1.011"
+ckd_dataset$sc[ckd_dataset$sc != "< 3.65"] <- "3.65+"
+ckd_dataset$su[ckd_dataset$su != "< 0"] <- "0+"
+ckd_dataset$rbcc[ckd_dataset$rbcc == "≥ 7.41"] <- "> 6.23"
+ckd_dataset$rbcc[ckd_dataset$rbcc == "6.23 - 6.82"] <- "> 6.23"
+ckd_dataset$rbcc[ckd_dataset$rbcc == "< 2.69"] <- "< 3.28"
+ckd_dataset$rbcc[ckd_dataset$rbcc == "2.69 - 3.28"] <- "< 3.28"
+ckd_dataset$bgr[ckd_dataset$bgr == "112 - 154"] <- "< 154"
+ckd_dataset$bgr[ckd_dataset$bgr == "< 112"] <- "< 154"
+ckd_dataset$bgr[ckd_dataset$bgr != "< 154"] <- "154+"
+ckd_dataset$al[ckd_dataset$al != "< 0"] <- "> 0"
+ckd_dataset$bu[ckd_dataset$bu != "< 48.1" & ckd_dataset$bu != "48.1 - 86.2"] <- "> 86.2"
+ckd_dataset$sod[ckd_dataset$sod == "128 - 133"] <- "< 133"
+ckd_dataset$sod[ckd_dataset$sod == "< 118"] <- "< 133"
+ckd_dataset$sod[ckd_dataset$sod == "118 - 123"] <- "< 133"
+ckd_dataset$sod[ckd_dataset$sod == "123 - 128"] <- "< 133"
+ckd_dataset$sod[ckd_dataset$sod == "143 - 148"] <- "143+"
+ckd_dataset$sod[ckd_dataset$sod == "148 - 153"] <- "143+"
+ckd_dataset$sod[ckd_dataset$sod == "≥ 158"] <- "143+"
+ckd_dataset$hemo[ckd_dataset$hemo == "< 6.1"] <- "< 11.3"
+ckd_dataset$hemo[ckd_dataset$hemo == "10 - 11.3"] <- "< 11.3"
+ckd_dataset$hemo[ckd_dataset$hemo == "6.1 - 7.4"] <- "< 11.3"
+ckd_dataset$hemo[ckd_dataset$hemo == "7.4 - 8.7"] <- "< 11.3"
+ckd_dataset$hemo[ckd_dataset$hemo == "8.7 - 10"] <- "< 11.3"
+ckd_dataset$hemo[ckd_dataset$hemo == "15.2 - 16.5"] <- "15.2+"
+ckd_dataset$hemo[ckd_dataset$hemo == "≥ 16.5"] <- "15.2+"
+ckd_dataset$pcv[ckd_dataset$pcv == "< 17.9"] <- "< 37.4"
+ckd_dataset$pcv[ckd_dataset$pcv == "17.9 - 21.8"] <- "< 37.4"
+ckd_dataset$pcv[ckd_dataset$pcv == "21.8 - 25.7"] <- "< 37.4"
+ckd_dataset$pcv[ckd_dataset$pcv == "25.7 - 29.6"] <- "< 37.4"
+ckd_dataset$pcv[ckd_dataset$pcv == "29.6 - 33.5"] <- "< 37.4"
+ckd_dataset$pcv[ckd_dataset$pcv == "33.5 - 37.4"] <- "< 37.4"
+ckd_dataset$pcv[ckd_dataset$pcv == "17.9 - 21.8"] <- "< 37.4"
+ckd_dataset$pcv[ckd_dataset$pcv == "41.3 - 45.2"] <- "41.3 - 49.1"
+ckd_dataset$pcv[ckd_dataset$pcv == "45.2 - 49.1"] <- "41.3 - 49.1"
+ckd_dataset$wbcc[ckd_dataset$wbcc == "12120 - 14500"] <- "12120+"
+ckd_dataset$wbcc[ckd_dataset$wbcc == "≥ 24020"] <- "12120+"
+ckd_dataset$wbcc[ckd_dataset$wbcc == "= 24020"] <- "12120+"
+ckd_dataset$wbcc[ckd_dataset$wbcc == "14500 - 16880"] <- "12120+"
+ckd_dataset$wbcc[ckd_dataset$wbcc == "16880 - 19260"] <- "12120+"
+ckd_dataset$wbcc[ckd_dataset$wbcc == "19260 - 21640"] <- "12120+"
+ckd_dataset$grf[ckd_dataset$grf == "≥ 227.944"] <- "177.612+"
+ckd_dataset$grf[ckd_dataset$grf == "177.612 - 202.778"] <- "177.612+"
+ckd_dataset$grf[ckd_dataset$grf == "202.778 - 227.944"] <- "177.612+"
+
+```
+
+
+
+```{r}
+
+```
+
+
+
+```{r}
+dataset <- ckd_dataset %>%
+  mutate(across(c( 'bp_limit','bp_diastolic', 'rbc', 'pc', 'pcc', 'ba','htn', 'dm',
+                  
+                  'cad','appet', 'pe','ane', 'affected'), as.integer))%>%
+  mutate(across(c('sg', 'al', 'su', 'bgr', 'bu', 'sod','sc', 
+                  'pot', 'hemo', 'pcv', 'rbcc','wbcc','grf','stage', 'age', 'class'), as.factor))
+
+
+
+
+
+
+summary(dataset)
+```
+
+
+## Reconstructing the Models for Chronic Kidney Disease
+
+In this section you will reconstruct the appropriate models used in Islam et al. (2020) with the aim of improving them using techniques we have learned in class. 
+
+
+### Logistic Regression 
+
+- Construct a Logistic regression model for the research question of Islam et al. (2020)
+
+```{r, warning=FALSE}
+library(glmnet)
+log_reg <- glm(class ~. -pot - affected,data = dataset, family='binomial' )
+log_reg
+```
+
+
+
+- Perform forward model selection, what model does this method select? 
+```{r}
+stepAIC(log_reg, direction = 'forward', trace = FALSE)
+```
+The model selects: class ~ (bp_diastolic + bp_limit + sg + al + rbc + 
+    su + pc + pcc + ba + bgr + bu + sod + sc + pot + hemo + pcv + 
+    rbcc + wbcc + htn + dm + cad + appet + pe + ane + grf + stage + 
+    affected + age
+Which is all the factors except for pot and affected
+
+- Perform backward model selection, what model does this method select?  
+
+```{r, warning=FALSE}
+stepAIC(log_reg, direction = 'backward', trace = FALSE)
+
+```
+Backward selection selects the model: class ~ bp_diastolic + bp_limit + al + su + hemo + 
+    pcv + appet
+
+
+
+- What is are the training and test errors for 5-fold CV for one of the models selected above? How does the classification rate from your model compare to the rate for the logistic regression from Islam et al. (2020). 
+
+```{r, warning=FALSE}
+set.seed(0216)
+
+n <- nrow(dataset)
+
+start <- c(1, 41, 81, 121, 161)
+end <- c(40, 80, 120, 160, n)
+acc <- numeric(5)
+train_error <- numeric(5)
+test_error <- numeric(5)
+data_fold <- sample(1:n)
+
+for (k in 1:5){
+  test_index <- data_fold[data_fold[start[k]:end[k]]]
+  test <- dataset[test_index, ]
+  train <- dataset[-test_index,]
+  
+  log_reg <- glm(class ~ bp_diastolic + bp_limit + al + su + hemo + pcv + appet, data = train, family = 'binomial')
+  
+  train_pred_probs <- predict.glm(log_reg, newdata = train, type = 'response')
+  test_pred_probs <- predict.glm(log_reg, newdata = test, type = 'response')
+  
+  train_preds <- ifelse(train_pred_probs < 0.5, 'ckd', 'notckd')
+  test_preds <- ifelse(test_pred_probs < 0.5, 'ckd', 'notckd')
+  
+  train_table <- table(train_preds, train$class)
+  test_table <- table(test_preds, test$class)
+  
+  train_acc <- sum(diag(train_table))/ sum(train_table)
+  test_acc <- sum(diag(test_table)) / sum(test_table)
+  
+  acc[k] <- test_acc
+  train_error[k] <- 1 - train_acc
+  test_error[k] <- 1 - test_acc
+
+}
+
+print('Accuracy')
+mean(acc)
+print('Train Error')
+mean(train_error)
+print('Test Error')
+mean(test_error)
+
+```
+
+My logistic regression has a classification rate of 97.47%, the original report has a rate of 94.77%
+
+- Construct an appropriate confidence interval for your model. 
+
+```{r, warning=FALSE}
+confint(log_reg, level = .95)
+```
+
+
+### LDA  
+- Construct model for the research question of Islam et al. (2020)
+
+```{r}
+lda <- lda(class ~. -pot - affected, data=dataset)
+
+lda
+```
+
+
+
+- What is are the training and test errors for 5-fold CV for this model? How does the classification rate from your model compare to the rate for the Naive Bayes from Islam et al. (2020).
+
+```{r}
+set.seed(0216)
+
+n <- nrow(dataset)
+
+start <- c(1, 41, 81, 121, 161)
+end <- c(40, 80, 120, 160, n)
+acc <- numeric(5)
+train_error <- numeric(5)
+test_error <- numeric(5)
+data_fold <- sample(1:n)
+
+for (k in 1:5){
+  test_index <- data_fold[data_fold[start[k]:end[k]]]
+  test <- dataset[test_index, ]
+  train <- dataset[-test_index,]
+  
+  #Used model selected by backward selection for log_reg, AICstep doesnt work with LDA
+  lda <- lda(class ~ bp_diastolic + bp_limit + al + su + hemo + pcv + appet, data = train)
+  
+  train_pred <- predict(lda, newdata = train)$class
+  test_pred <- predict(lda, newdata = test)$class
+  
+  
+  train_table <- table(train_pred, train$class)
+  test_table <- table(test_pred, test$class)
+  
+  train_acc <- sum(diag(train_table))/ sum(train_table)
+  test_acc <- sum(diag(test_table)) / sum(test_table)
+  
+  acc[k] <- test_acc
+  train_error[k] <- 1 - train_acc
+  test_error[k] <- 1 - test_acc
+
+}
+
+print('Accuracy')
+mean(acc)
+print('Train Error')
+mean(train_error)
+print('Test Error')
+mean(test_error)
+
+```
+
+As the original report did not test with LDA, my LDA accuracy was 94.46%, and the naive bayes was 93.91%.
+
+
+
+### Naive Bayes
+- Construct model for the research question of Islam et al. (2020)
+
+```{r}
+bayes <- naiveBayes(class ~. -pot - affected, data = dataset)
+
+bayes
+```
+
+
+- What is are the training and test errors for 5-fold CV for this model? How does the classification rate from your model compare to the rate for the Naive Bayes from Islam et al. (2020).
+
+```{r}
+set.seed(0216)
+
+n <- nrow(dataset)
+
+start <- c(1, 41, 81, 121, 161)
+end <- c(40, 80, 120, 160, n)
+acc <- numeric(5)
+train_error <- numeric(5)
+test_error <- numeric(5)
+data_fold <- sample(1:n)
+
+for (k in 1:5){
+  test_index <- data_fold[data_fold[start[k]:end[k]]]
+  test <- dataset[test_index, ]
+  train <- dataset[-test_index,]
+  
+  # Used the model selected by backward selection for logistic regression bc AICstep isnt meant for naive bayes
+  bayes <- naiveBayes(class ~ bp_diastolic + bp_limit + al + su + hemo + pcv + appet, data = train)
+  
+  train_pred <- predict(bayes, newdata = train)
+  test_pred <- predict(bayes, newdata = test)
+  
+  train_table <- table(train_pred, train$class)
+  test_table <- table(test_pred, test$class)
+  
+  train_acc <- sum(diag(train_table))/ sum(train_table)
+  test_acc <- sum(diag(test_table)) / sum(test_table)
+  
+  acc[k] <- test_acc
+  train_error[k] <- 1 - train_acc
+  test_error[k] <- 1 - test_acc
+
+}
+
+print('Accuracy')
+mean(acc)
+print('Train Error')
+mean(train_error)
+print('Test Error')
+mean(test_error)
+
+```
+The accuracy of my Naive Bayes model is 92.96% and the original report had a rate of 93.91%.
+
+### Decision Tree Methods 
+
+- Construct a decision tree for the research question of Islam et al. (2020). Use the Gini index as the training-loss. 
+```{r}
+set.seed(0216)
+library(tree)
+library(rpart)
+library(rpart.plot)
+dec_tree = rpart(class ~ . - pot - affected, data = dataset, method = 'class', parms = list(split="gini"))
+rpart.plot(dec_tree)
+
+cp.min <- dec_tree$cptable[which.min(dec_tree$cptable[,"xerror"]),"CP"]
+```
+
+
+- Use CV to choose the optimal pruning for your decision-tree model, what model does this method select?
+
+```{r}
+library(partykit)
+pruning_tree <- prune(dec_tree, cp = cp.min)
+
+#pruning_tree
+
+#plot(pruning_tree)
+
+dec_tree_party <- as.party(pruning_tree)
+plot(dec_tree_party)
+```
+The model selected is: class ~ hemo + pcv + stage + grf + rbcc + sg
+as these are the most important variables designated
+
+- What is are the training and test errors for 5-fold CV for this model? How does the classification rate from your model compare to the rate for the tree-based classifier from Islam et al. (2020).
+
+```{r}
+set.seed(0216)
+
+n <- nrow(dataset)
+
+start <- c(1, 41, 81, 121, 161)
+end <- c(40, 80, 120, 160, n)
+acc <- numeric(5)
+train_error <- numeric(5)
+test_error <- numeric(5)
+data_fold <- sample(1:n)
+
+for (k in 1:5){
+  test_index <- data_fold[data_fold[start[k]:end[k]]]
+  test <- dataset[test_index, ]
+  train <- dataset[-test_index,]
+  
+  pruning_tree <- prune(dec_tree, cp = cp.min)
+  
+  train_pred <- predict(pruning_tree, newdata = train, type = 'class')
+  test_pred <- predict(pruning_tree, newdata = test, type = 'class')
+  
+  train_table <- table(train_pred, train$class)
+  test_table <- table(test_pred, test$class)
+  
+  train_acc <- sum(diag(train_table))/ sum(train_table)
+  test_acc <- sum(diag(test_table)) / sum(test_table)
+  
+  acc[k] <- test_acc
+  train_error[k] <- 1 - train_acc
+  test_error[k] <- 1 - test_acc
+
+}
+
+print('Accuracy')
+mean(acc)
+print('Train Error')
+mean(train_error)
+print('Test Error')
+mean(test_error)
+```
+The classification rate of mine is 97.47% and the rate of the tree based classifier in the original report was 98.89%. 
+
+
+```{r}
+go <- randomForest(class ~.-pot-affected, dataset)
+importance(go)
+```
+sg + al + hemo + pcv + grf + stage + rbcc
+
+- Repeat the above procedure using bagging? What is the training error for this model? 
+
+```{r}
+library(randomForest)
+set.seed(0216)
+
+n <- nrow(dataset)
+
+start <- c(1, 41, 81, 121, 161)
+end <- c(40, 80, 120, 160, n)
+acc <- numeric(5)
+train_error <- numeric(5)
+test_error <- numeric(5)
+data_fold <- sample(1:n)
+
+for (k in 1:5){
+  test_index <- data_fold[data_fold[start[k]:end[k]]]
+  test <- dataset[test_index, ]
+  train <- dataset[-test_index,]
+  # Selected model from most important variables identified by randomForest
+  forest <- randomForest(class ~ sg + al + rbcc + hemo + pcv + grf + stage, train)
+  
+  train_pred <- predict(forest, newdata = train)
+  test_pred <- predict(forest, newdata = test)
+  
+  train_table <- table(train_pred, train$class)
+  test_table <- table(test_pred, test$class)
+  
+  train_acc <- sum(diag(train_table))/ sum(train_table)
+  test_acc <- sum(diag(test_table)) / sum(test_table)
+  
+  acc[k] <- test_acc
+  train_error[k] <- 1 - train_acc
+  test_error[k] <- 1 - test_acc
+
+}
+
+print('Accuracy')
+mean(acc)
+print('Train Error')
+mean(train_error)
+print('Test Error')
+mean(test_error)
+```
+
+
+- Repeat the above procedure using boosting? What is the training error for this model?
+
+I cannot run a boosting model without breaking RStudio
+
+```{r}
+library(gbm)
+library(plyr)
+
+# Requires factor to be {0,1}. When I turn class into {0,1}, it causes a termnial error in R
+# When I run gbm, it breaks my markdown and all variables become characters without way of change
+
+#boosted <- gbm(class ~. -pot - affected, data = dataset, interaction.depth = 5)
+#summary(boosted)
+```
+
+- Which tree-based model preforms the best? 
+
+The pruned tree perfomrd the best, with roughly 97% accuracy. 
+
+## Summary of Findings
+
+Provide a high level non-technical overview of the project. 
+
+- Discuss the original research question and any issues with the original findings. 
+- Summarize your findings for the models for chronic kidney disease. 
+- Are you able to produce similar results to the original paper? Are you able to improve upon the previously existing results?
+- Which model would you recommend to experts if they were interested in the research question? 
+
+
+
+The orginal research question looked to find the best model to determine variables that are predictors of CKD. The original findings didnt really utilize model selection or validation sets. I was able to produce very similar results to the original study, although mine did not improve upon their results. If I were to recommend a model to experts, I would recommend logistic regression or a simple pruned classification tree as they resulted in a similar, high accuracy point. 
+
+
+
